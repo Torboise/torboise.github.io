@@ -7,7 +7,7 @@ body {
 }
 #sex {
   color: rgb(200,145, 72);
-  font-family: "Comic Sans" monospace;
+  font-family: "Comic Sans" sans-serif;
 }
 #order {
   color: red;
