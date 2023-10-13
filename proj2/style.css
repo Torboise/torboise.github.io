@@ -1,0 +1,29 @@
+.girl {
+  position:fixed;
+  float: right;
+  bottom: 0px;
+  left: 0px;
+  z-index:5;
+}
+.sex {
+  color: white;
+  position:absolute;
+  float:right;
+  left:10%;
+  top:100%;
+  z-index: 6;
+}
+.pilates {
+  height: 80%;
+  overflow: hidden;
+}
+.supreme {
+  text-align: center;
+  background: white;
+  border: ridge;
+  filter: drop-shadow(10px 10px 4px #0f0f0f);
+  position:absolute;
+  z-index: 10;
+  left:100px;
+  top:75%;
+}
