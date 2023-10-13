@@ -1,0 +1,18 @@
+body {
+  background-color: darkblue;
+}
+.sex {
+  color: rgb(200,145, 72);
+  font-style: italic;
+}
+#sex {
+  color: rgb(200,145, 72);
+  font-family: cursive;
+}
+#order {
+  color: red;
+  background-color: black;
+  font-weight: bold;
+  font-family: serif;
+  font-size: 122px;
+}
