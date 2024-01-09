@@ -1,32 +1,7 @@
 body {
-  text-align: center;
-  background-color: black;
-  background-image:url("https://i.pinimg.com/originals/75/28/a2/7528a292024655a61068f0d6a8d83a73.jpg");
-  background-size: 100% auto;
-  background-repeat: no-repeat;
+  background-color: #104566;
 }
-.list {
-  position: relative;
-  top: 250px;
-  margin: 150px;
-  font-family: sans-serif;
-  color: rgb(205,185,212);
-  background-color:black;
-  opacity:0.9;
-  font-weight: bold;
-  list-style-position: inside;
-  font-size: 125%;
-}
-.logan {
-  font-style: italic;
-  color: rgb(217,109,161)
-}
-.response {
-  color: rgb(120,178,233)
-}
-.rem {
-  width: 100%;
-  position:relative;
-  left: 850px;
-  bottom: 400px;
+.woman {
+  float:left;
+  size:50%
 }
