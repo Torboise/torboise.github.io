@@ -1,0 +1,784 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tower Defense Screensaver</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #000;
+            color: white;
+            font-family: Arial, sans-serif;
+            overflow: hidden;
+        }
+        canvas {
+            display: block;
+            background-color: black;
+        }
+        .instructions {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+
+    <script>
+        // Make canvas fullscreen
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        
+        resizeCanvas();
+        window.addEventListener('resize', resizeCanvas);
+
+        // Game constants - now using dynamic screen size
+        let SCREEN_WIDTH = canvas.width;
+        let SCREEN_HEIGHT = canvas.height;
+        const TOWER_RADIUS = 20;
+        const ENEMY_RADIUS = 5;
+        const BULLET_RADIUS = 3;
+        const SPAWN_RADIUS = Math.min(SCREEN_WIDTH, SCREEN_HEIGHT) * 0.4; // Proportional to screen
+        const ENEMY_SPEED = 1;
+
+        // Colors
+        const BLACK = '#000000';
+        const WHITE = '#FFFFFF';
+        const RED = '#FF0000';
+        const GREEN = '#00FF00';
+
+        class Tower {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.radius = TOWER_RADIUS;
+                this.attack_power = 2;
+                this.attack_speed = 1.5;
+                this.attack_range = 100;
+                this.max_health = 10;
+                this.health = 10;
+                this.health_regen = 0.1;
+                this.last_shot_time = Date.now();
+                this.last_regen_time = Date.now();
+            }
+
+            canShoot() {
+                const currentTime = Date.now();
+                return currentTime - this.last_shot_time >= (1000 / this.attack_speed);
+            }
+
+            updateHealth() {
+                const currentTime = Date.now();
+                if (currentTime - this.last_regen_time >= 1000) {
+                    this.health = Math.min(this.max_health, this.health + this.health_regen);
+                    this.last_regen_time = currentTime;
+                }
+            }
+
+            takeDamage(damage) {
+                this.health -= damage;
+                return this.health <= 0;
+            }
+
+            shoot(targetEnemy) {
+                if (this.canShoot() && targetEnemy) {
+                    const dx = targetEnemy.x - this.x;
+                    const dy = targetEnemy.y - this.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+
+                    if (distance <= this.attack_range && distance > 0) {
+                        this.last_shot_time = Date.now();
+                        const normalizedDx = dx / distance;
+                        const normalizedDy = dy / distance;
+                        return new Bullet(this.x, this.y, normalizedDx, normalizedDy, this.attack_power);
+                    }
+                }
+                return null;
+            }
+
+            draw(ctx) {
+                // Draw attack range
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.attack_range, 0, 2 * Math.PI);
+                ctx.strokeStyle = WHITE;
+                ctx.lineWidth = 1;
+                ctx.stroke();
+
+                // Draw tower
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, 2 * Math.PI);
+                ctx.fillStyle = WHITE;
+                ctx.fill();
+
+                // Draw health bar
+                const barWidth = 60;
+                const barHeight = 8;
+                const barX = this.x - barWidth / 2;
+                const barY = this.y - this.radius - 15;
+
+                // Background
+                ctx.fillStyle = RED;
+                ctx.fillRect(barX, barY, barWidth, barHeight);
+
+                // Current health
+                const healthRatio = this.health / this.max_health;
+                ctx.fillStyle = GREEN;
+                ctx.fillRect(barX, barY, barWidth * healthRatio, barHeight);
+            }
+        }
+
+        class Enemy {
+            constructor(x, y, enemyType = 1, wave = 1) {
+                this.x = x;
+                this.y = y;
+                this.type = enemyType;
+
+                const waveHealthMultiplier = 1 + (wave - 1) * 0.15;
+                const waveDamageMultiplier = 1 + (wave - 1) * 0.1;
+
+                if (enemyType === 1) {
+                    this.radius = ENEMY_RADIUS;
+                    this.health = Math.floor(1 * waveHealthMultiplier);
+                    this.speed = ENEMY_SPEED;
+                    this.damage = Math.floor(1 * waveDamageMultiplier);
+                } else if (enemyType === 2) {
+                    this.radius = ENEMY_RADIUS + 3;
+                    this.health = Math.floor(5 * waveHealthMultiplier);
+                    this.speed = ENEMY_SPEED * 0.8;
+                    this.damage = Math.floor(4 * waveDamageMultiplier);
+                } else if (enemyType === 3) {
+                    this.radius = ENEMY_RADIUS + 6;
+                    this.health = Math.floor(12 * waveHealthMultiplier);
+                    this.speed = ENEMY_SPEED * 0.6;
+                    this.damage = Math.floor(8 * waveDamageMultiplier);
+                } else if (enemyType === 4) {
+                    this.radius = ENEMY_RADIUS + 10;
+                    this.health = Math.floor(25 * waveHealthMultiplier);
+                    this.speed = ENEMY_SPEED * 0.4;
+                    this.damage = Math.floor(15 * waveDamageMultiplier);
+                }
+            }
+
+            update(towerX, towerY, speedMultiplier = 1.0) {
+                const dx = towerX - this.x;
+                const dy = towerY - this.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                if (distance > 0) {
+                    this.x += (dx / distance) * this.speed * speedMultiplier;
+                    this.y += (dy / distance) * this.speed * speedMultiplier;
+                }
+            }
+
+            takeDamage(damage) {
+                this.health -= damage;
+                return this.health <= 0;
+            }
+
+            draw(ctx) {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, 2 * Math.PI);
+                ctx.fillStyle = RED;
+                ctx.fill();
+            }
+        }
+
+        class Bullet {
+            constructor(x, y, dx, dy, damage) {
+                this.x = x;
+                this.y = y;
+                this.dx = dx * 5;
+                this.dy = dy * 5;
+                this.radius = BULLET_RADIUS;
+                this.damage = damage;
+            }
+
+            update() {
+                this.x += this.dx;
+                this.y += this.dy;
+            }
+
+            isOffScreen() {
+                return (this.x < 0 || this.x > SCREEN_WIDTH || 
+                        this.y < 0 || this.y > SCREEN_HEIGHT);
+            }
+
+            collidesWith(enemy) {
+                const dx = this.x - enemy.x;
+                const dy = this.y - enemy.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                return distance < (this.radius + enemy.radius);
+            }
+
+            draw(ctx) {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, 2 * Math.PI);
+                ctx.fillStyle = WHITE;
+                ctx.fill();
+            }
+        }
+
+        class ExplosionParticle {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                const angle = Math.random() * 2 * Math.PI;
+                const speed = Math.random() * 6 + 2;
+                this.dx = Math.cos(angle) * speed;
+                this.dy = Math.sin(angle) * speed;
+                this.life = Math.random() * 30 + 30;
+                this.maxLife = this.life;
+                this.size = Math.random() * 4 + 2;
+            }
+
+            update() {
+                this.x += this.dx;
+                this.y += this.dy;
+                this.dx *= 0.95;
+                this.dy *= 0.95;
+                this.life -= 1;
+                return this.life > 0;
+            }
+
+            draw(ctx) {
+                const alphaRatio = this.life / this.maxLife;
+                const colorIntensity = Math.floor(255 * alphaRatio);
+                
+                let color;
+                if (alphaRatio > 0.7) {
+                    color = `rgb(255, 255, ${colorIntensity})`;
+                } else if (alphaRatio > 0.3) {
+                    color = `rgb(255, ${colorIntensity}, 0)`;
+                } else {
+                    color = `rgb(${colorIntensity}, 0, 0)`;
+                }
+
+                const currentSize = Math.max(1, this.size * alphaRatio);
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, currentSize, 0, 2 * Math.PI);
+                ctx.fillStyle = color;
+                ctx.fill();
+            }
+        }
+
+        class Button {
+            constructor(x, y, width, height, text, cost) {
+                this.x = x;
+                this.y = y;
+                this.width = width;
+                this.height = height;
+                this.text = text;
+                this.cost = cost;
+            }
+
+            draw(ctx, coins) {
+                // Button outline
+                ctx.strokeStyle = WHITE;
+                ctx.lineWidth = 2;
+                ctx.strokeRect(this.x, this.y, this.width, this.height);
+
+                // Button text
+                const color = coins >= this.cost ? WHITE : '#666666';
+                ctx.fillStyle = color;
+                ctx.font = '14px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText(`${this.text} ($${this.cost})`, this.x + this.width / 2, this.y + this.height / 2 + 5);
+            }
+
+            isClicked(x, y) {
+                return x >= this.x && x <= this.x + this.width &&
+                       y >= this.y && y <= this.y + this.height;
+            }
+        }
+
+        class Game {
+            constructor() {
+                this.updateScreenSize();
+                this.tower = new Tower(SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2);
+                this.enemies = [];
+                this.bullets = [];
+                this.coins = 0;
+                this.enemySpawnTimer = 0;
+                this.speedMultiplier = 1.0;
+                this.speedToggle = false;
+                this.gameOver = false;
+                this.explosionParticles = [];
+                
+                // Wave system
+                this.currentWave = 1;
+                this.enemiesInWave = 10;
+                this.enemiesSpawnedThisWave = 0;
+                this.enemiesKilledThisWave = 0;
+                this.waveStartTime = Date.now();
+                this.showWaveText = true;
+
+                // Shop buttons - positioned relative to screen size
+                this.attackPowerButton = new Button(10, SCREEN_HEIGHT - 100, 150, 35, "Attack Power", 5);
+                this.attackSpeedButton = new Button(170, SCREEN_HEIGHT - 100, 150, 35, "Attack Speed", 3);
+                this.attackRangeButton = new Button(330, SCREEN_HEIGHT - 100, 150, 35, "Attack Range", 4);
+                this.maxHealthButton = new Button(490, SCREEN_HEIGHT - 100, 150, 35, "Max Health", 8);
+                this.healthRegenButton = new Button(10, SCREEN_HEIGHT - 60, 150, 35, "Health Regen", 6);
+                this.speedButton = new Button(SCREEN_WIDTH - 120, 10, 100, 30, "Speed: 1x", 0);
+
+                // Super mode toggle button (bottom right)
+                this.superMode = false;
+                this.superModeButton = new Button(SCREEN_WIDTH - 120, SCREEN_HEIGHT - 120, 100, 30, "Super: OFF", 0);
+
+                // Upgrade costs
+                this.attackPowerCost = 5;
+                this.attackSpeedCost = 3;
+                this.attackRangeCost = 4;
+                this.maxHealthCost = 8;
+                this.healthRegenCost = 6;
+
+                this.setupEventListeners();
+            }
+
+            updateScreenSize() {
+                SCREEN_WIDTH = canvas.width;
+                SCREEN_HEIGHT = canvas.height;
+            }
+
+            setupEventListeners() {
+                canvas.addEventListener('click', (e) => {
+                    const rect = canvas.getBoundingClientRect();
+                    const x = e.clientX - rect.left;
+                    const y = e.clientY - rect.top;
+                    this.handleClick(x, y);
+                });
+
+                document.addEventListener('keydown', (e) => {
+                    if (e.key === 'r' || e.key === 'R') {
+                        if (this.gameOver) {
+                            this.restartGame();
+                        }
+                    }
+                });
+            }
+
+            autoUpgradeAll() {
+                // Upgrade attack power
+                this.tower.attack_power += 1;
+                this.attackPowerCost = Math.floor(this.attackPowerCost * 1.5);
+                this.attackPowerButton.cost = this.attackPowerCost;
+                
+                // Upgrade attack speed
+                this.tower.attack_speed += 0.5;
+                this.attackSpeedCost = Math.floor(this.attackSpeedCost * 1.3);
+                this.attackSpeedButton.cost = this.attackSpeedCost;
+                
+                // Upgrade attack range
+                this.tower.attack_range += 20;
+                this.attackRangeCost = Math.floor(this.attackRangeCost * 1.4);
+                this.attackRangeButton.cost = this.attackRangeCost;
+                
+                // Upgrade max health
+                this.tower.max_health += 5;
+                this.tower.health += 5;
+                this.maxHealthCost = Math.floor(this.maxHealthCost * 1.5);
+                this.maxHealthButton.cost = this.maxHealthCost;
+                
+                // Upgrade health regen
+                this.tower.health_regen += 0.2;
+                this.healthRegenCost = Math.floor(this.healthRegenCost * 1.6);
+                this.healthRegenButton.cost = this.healthRegenCost;
+            }
+
+            handleClick(x, y) {
+                if (this.gameOver) return;
+
+                // Check attack power button
+                let cost = this.superMode ? 1 : this.attackPowerCost;
+                if (this.attackPowerButton.isClicked(x, y) && this.coins >= cost) {
+                    this.coins -= cost;
+                    this.tower.attack_power += 1;
+                    this.attackPowerCost = Math.floor(this.attackPowerCost * 1.5);
+                    this.attackPowerButton.cost = this.attackPowerCost;
+                }
+                // Check attack speed button
+                else if (this.attackSpeedButton.isClicked(x, y) && this.coins >= (this.superMode ? 1 : this.attackSpeedCost)) {
+                    this.coins -= (this.superMode ? 1 : this.attackSpeedCost);
+                    this.tower.attack_speed += 0.5;
+                    this.attackSpeedCost = Math.floor(this.attackSpeedCost * 1.3);
+                    this.attackSpeedButton.cost = this.attackSpeedCost;
+                }
+                // Check attack range button
+                else if (this.attackRangeButton.isClicked(x, y) && this.coins >= (this.superMode ? 1 : this.attackRangeCost)) {
+                    this.coins -= (this.superMode ? 1 : this.attackRangeCost);
+                    this.tower.attack_range += 20;
+                    this.attackRangeCost = Math.floor(this.attackRangeCost * 1.4);
+                    this.attackRangeButton.cost = this.attackRangeCost;
+                }
+                // Check max health button
+                else if (this.maxHealthButton.isClicked(x, y) && this.coins >= (this.superMode ? 1 : this.maxHealthCost)) {
+                    this.coins -= (this.superMode ? 1 : this.maxHealthCost);
+                    this.tower.max_health += 5;
+                    this.tower.health += 5;
+                    this.maxHealthCost = Math.floor(this.maxHealthCost * 1.5);
+                    this.maxHealthButton.cost = this.maxHealthCost;
+                }
+                // Check health regen button
+                else if (this.healthRegenButton.isClicked(x, y) && this.coins >= (this.superMode ? 1 : this.healthRegenCost)) {
+                    this.coins -= (this.superMode ? 1 : this.healthRegenCost);
+                    this.tower.health_regen += 0.2;
+                    this.healthRegenCost = Math.floor(this.healthRegenCost * 1.6);
+                    this.healthRegenButton.cost = this.healthRegenCost;
+                }
+                // Check speed toggle button
+                else if (this.speedButton.isClicked(x, y)) {
+                    this.speedToggle = !this.speedToggle;
+                    this.speedMultiplier = this.speedToggle ? 2.0 : 1.0;
+                    this.speedButton.text = `Speed: ${this.speedToggle ? '2x' : '1x'}`;
+                }
+                // Check super mode toggle button
+                else if (this.superModeButton.isClicked(x, y)) {
+                    this.superMode = !this.superMode;
+                    this.superModeButton.text = `Super: ${this.superMode ? 'ON' : 'OFF'}`;
+                }
+            }
+
+            createExplosion(x, y, numParticles = 30) {
+                for (let i = 0; i < numParticles; i++) {
+                    this.explosionParticles.push(new ExplosionParticle(x, y));
+                }
+            }
+
+            restartGame() {
+                this.updateScreenSize();
+                this.tower = new Tower(SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2);
+                this.enemies = [];
+                this.bullets = [];
+                this.coins = 0;
+                this.speedMultiplier = 1.0;
+                this.speedToggle = false;
+                this.gameOver = false;
+                this.explosionParticles = [];
+                
+                // Reset wave system
+                this.currentWave = 1;
+                this.enemiesInWave = 10;
+                this.enemiesSpawnedThisWave = 0;
+                this.enemiesKilledThisWave = 0;
+                this.waveStartTime = Date.now();
+                this.showWaveText = true;
+                this.enemySpawnTimer = 0;
+                
+                // Reset upgrade costs
+                this.attackPowerCost = 5;
+                this.attackSpeedCost = 3;
+                this.attackRangeCost = 4;
+                this.maxHealthCost = 8;
+                this.healthRegenCost = 6;
+                
+                // Update button positions for new screen size
+                this.attackPowerButton = new Button(10, SCREEN_HEIGHT - 100, 150, 35, "Attack Power", this.attackPowerCost);
+                this.attackSpeedButton = new Button(170, SCREEN_HEIGHT - 100, 150, 35, "Attack Speed", this.attackSpeedCost);
+                this.attackRangeButton = new Button(330, SCREEN_HEIGHT - 100, 150, 35, "Attack Range", this.attackRangeCost);
+                this.maxHealthButton = new Button(490, SCREEN_HEIGHT - 100, 150, 35, "Max Health", this.maxHealthCost);
+                this.healthRegenButton = new Button(10, SCREEN_HEIGHT - 60, 150, 35, "Health Regen", this.healthRegenCost);
+                this.speedButton = new Button(SCREEN_WIDTH - 120, 10, 100, 30, "Speed: 1x", 0);
+                this.superModeButton = new Button(SCREEN_WIDTH - 120, SCREEN_HEIGHT - 120, 100, 30, "Super: OFF", 0);
+                
+                this.speedButton.text = "Speed: 1x";
+                
+                // Reset super mode
+                this.superMode = false;
+                this.superModeButton.text = "Super: OFF";
+            }
+
+            spawnEnemy() {
+                const angle = Math.random() * 2 * Math.PI;
+                // Spawn enemies just outside the screen
+                const spawnDistance = Math.max(SCREEN_WIDTH, SCREEN_HEIGHT) * 0.6 + 50; // Extra 50 pixels outside
+                let x = SCREEN_WIDTH / 2 + Math.cos(angle) * spawnDistance;
+                let y = SCREEN_HEIGHT / 2 + Math.sin(angle) * spawnDistance;
+                
+                // No need to clamp since we want them outside the screen
+                
+                // Determine enemy type based on wave
+                let enemyType = 1;
+                if (this.currentWave >= 3) {
+                    enemyType = Math.random() < 0.7 ? 1 : 2;
+                }
+                if (this.currentWave >= 5) {
+                    const rand = Math.random();
+                    if (rand < 0.4) enemyType = 1;
+                    else if (rand < 0.8) enemyType = 2;
+                    else enemyType = 3;
+                }
+                if (this.currentWave >= 8) {
+                    const rand = Math.random();
+                    if (rand < 0.17) enemyType = 1;
+                    else if (rand < 0.5) enemyType = 2;
+                    else if (rand < 0.83) enemyType = 3;
+                    else enemyType = 4;
+                }
+                
+                this.enemies.push(new Enemy(x, y, enemyType, this.currentWave));
+            }
+
+            findNearestEnemy() {
+                if (this.enemies.length === 0) return null;
+                
+                let nearest = null;
+                let minDistance = Infinity;
+                
+                for (const enemy of this.enemies) {
+                    const distance = Math.sqrt((enemy.x - this.tower.x) ** 2 + (enemy.y - this.tower.y) ** 2);
+                    if (distance <= this.tower.attack_range && distance < minDistance) {
+                        minDistance = distance;
+                        nearest = enemy;
+                    }
+                }
+                
+                return nearest;
+            }
+
+            update() {
+                if (this.gameOver) {
+                    // Update explosion particles
+                    for (let i = this.explosionParticles.length - 1; i >= 0; i--) {
+                        if (!this.explosionParticles[i].update()) {
+                            this.explosionParticles.splice(i, 1);
+                        }
+                    }
+                    return;
+                }
+
+                // Update tower health
+                this.tower.updateHealth();
+
+                // Spawn enemies
+                if (this.enemiesSpawnedThisWave < this.enemiesInWave) {
+                    this.enemySpawnTimer++;
+                    const currentSpawnRate = Math.max(10, 60 - (this.currentWave - 1) * 8);
+                    if (this.enemySpawnTimer >= currentSpawnRate) {
+                        this.spawnEnemy();
+                        this.enemiesSpawnedThisWave++;
+                        this.enemySpawnTimer = 0;
+                    }
+                } else if (this.enemies.length === 0 && this.enemiesSpawnedThisWave >= this.enemiesInWave) {
+                    // Wave completion
+                    const bonus = Math.max(5, Math.floor(this.coins * 0.1) + 5);
+                    this.coins += bonus;
+                    
+                    this.currentWave++;
+                    this.enemiesInWave = 10 + (this.currentWave - 1) * 5;
+                    this.enemiesSpawnedThisWave = 0;
+                    this.enemiesKilledThisWave = 0;
+                    this.waveStartTime = Date.now();
+                    this.showWaveText = true;
+                }
+
+                // Update enemies
+                for (let i = this.enemies.length - 1; i >= 0; i--) {
+                    const enemy = this.enemies[i];
+                    enemy.update(this.tower.x, this.tower.y, this.speedMultiplier);
+                    
+                    // Check collision with tower
+                    const distance = Math.sqrt((enemy.x - this.tower.x) ** 2 + (enemy.y - this.tower.y) ** 2);
+                    if (distance < this.tower.radius + enemy.radius) {
+                        this.tower.takeDamage(enemy.damage);
+                        this.enemies.splice(i, 1);
+                        if (this.tower.health <= 0) {
+                            this.createExplosion(this.tower.x, this.tower.y, 50);
+                            this.gameOver = true;
+                            break;
+                        }
+                    }
+                }
+
+                // Tower shooting
+                const target = this.findNearestEnemy();
+                const bullet = this.tower.shoot(target);
+                if (bullet) {
+                    this.bullets.push(bullet);
+                }
+
+                // Update bullets
+                for (let i = this.bullets.length - 1; i >= 0; i--) {
+                    const bullet = this.bullets[i];
+                    bullet.update();
+                    
+                    if (bullet.isOffScreen()) {
+                        this.bullets.splice(i, 1);
+                        continue;
+                    }
+                    
+                    // Check bullet-enemy collisions
+                    for (let j = this.enemies.length - 1; j >= 0; j--) {
+                        const enemy = this.enemies[j];
+                        if (bullet.collidesWith(enemy)) {
+                            if (enemy.takeDamage(bullet.damage)) {
+                                this.enemies.splice(j, 1);
+                                this.autoUpgradeAll();
+                                this.enemiesKilledThisWave++;
+                            }
+                            this.bullets.splice(i, 1);
+                            break;
+                        }
+                    }
+                }
+
+                // Update explosion particles
+                for (let i = this.explosionParticles.length - 1; i >= 0; i--) {
+                    if (!this.explosionParticles[i].update()) {
+                        this.explosionParticles.splice(i, 1);
+                    }
+                }
+            }
+
+            draw() {
+                // Clear screen
+                ctx.fillStyle = BLACK;
+                ctx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
+
+                // Draw tower (only if not game over)
+                if (!this.gameOver) {
+                    this.tower.draw(ctx);
+                }
+
+                // Draw enemies
+                for (const enemy of this.enemies) {
+                    enemy.draw(ctx);
+                }
+
+                // Draw bullets
+                for (const bullet of this.bullets) {
+                    bullet.draw(ctx);
+                }
+
+                // Draw explosion particles
+                for (const particle of this.explosionParticles) {
+                    particle.draw(ctx);
+                }
+
+                // Draw UI
+                if (this.gameOver) {
+                    // Game over screen
+                    ctx.fillStyle = WHITE;
+                    ctx.font = '48px Arial';
+                    ctx.textAlign = 'center';
+                    ctx.fillText('GAME OVER', SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2);
+                    
+                    ctx.font = '24px Arial';
+                    ctx.fillText(`Reached Wave: ${this.currentWave}`, SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 + 60);
+                    ctx.fillText('Press R to restart', SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 + 100);
+                } else {
+                    // Normal game UI
+                    ctx.fillStyle = WHITE;
+                    ctx.font = '20px Arial';
+                    ctx.textAlign = 'left';
+                    
+                    // Coins (hidden)
+                    // ctx.fillText(`Coins: ${this.coins}`, 10, SCREEN_HEIGHT - 140);
+                    
+                    // Tower stats
+                    ctx.fillText(`Power: ${this.tower.attack_power}  Speed: ${this.tower.attack_speed.toFixed(1)}  Range: ${this.tower.attack_range}`, 10, 30);
+                    ctx.fillText(`Health: ${this.tower.health.toFixed(1)}/${this.tower.max_health}  Regen: ${this.tower.health_regen.toFixed(1)}/s`, 10, 60);
+                    
+                    // Wave info
+                    const enemiesRemaining = this.enemiesInWave - this.enemiesKilledThisWave;
+                    ctx.fillText(`Wave: ${this.currentWave}  Enemies Left: ${enemiesRemaining}`, 10, 90);
+                    
+                    // Wave start text
+                    if (this.showWaveText) {
+                        const elapsed = (Date.now() - this.waveStartTime) / 1000;
+                        if (elapsed < 3.0) {
+                            const alpha = Math.max(0, 1 - elapsed / 3);
+                            ctx.save();
+                            ctx.globalAlpha = alpha;
+                            ctx.font = '48px Arial';
+                            ctx.textAlign = 'center';
+                            ctx.fillText(`WAVE ${this.currentWave}`, SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 - 100);
+                            ctx.restore();
+                        } else {
+                            this.showWaveText = false;
+                        }
+                    }
+                    
+                    // Shop buttons (hidden for screensaver)
+                    /*
+                    // Draw buttons with super mode costs if active
+                    if (this.superMode) {
+                        // Temporarily set button costs to 1 for display
+                        const originalCosts = [
+                            this.attackPowerButton.cost, this.attackSpeedButton.cost,
+                            this.attackRangeButton.cost, this.maxHealthButton.cost, 
+                            this.healthRegenButton.cost
+                        ];
+                        
+                        this.attackPowerButton.cost = 1;
+                        this.attackSpeedButton.cost = 1;
+                        this.attackRangeButton.cost = 1;
+                        this.maxHealthButton.cost = 1;
+                        this.healthRegenButton.cost = 1;
+                        
+                        this.attackPowerButton.draw(ctx, this.coins);
+                        this.attackSpeedButton.draw(ctx, this.coins);
+                        this.attackRangeButton.draw(ctx, this.coins);
+                        this.maxHealthButton.draw(ctx, this.coins);
+                        this.healthRegenButton.draw(ctx, this.coins);
+                        
+                        // Restore original costs
+                        this.attackPowerButton.cost = originalCosts[0];
+                        this.attackSpeedButton.cost = originalCosts[1];
+                        this.attackRangeButton.cost = originalCosts[2];
+                        this.maxHealthButton.cost = originalCosts[3];
+                        this.healthRegenButton.cost = originalCosts[4];
+                    } else {
+                        this.attackPowerButton.draw(ctx, this.coins);
+                        this.attackSpeedButton.draw(ctx, this.coins);
+                        this.attackRangeButton.draw(ctx, this.coins);
+                        this.maxHealthButton.draw(ctx, this.coins);
+                        this.healthRegenButton.draw(ctx, this.coins);
+                    }
+                    
+                    this.speedButton.draw(ctx, 0);
+                    */
+                }
+                
+                // Super mode toggle button (hidden for screensaver)
+                // this.superModeButton.draw(ctx, 0);
+            }
+
+            gameLoop() {
+                this.update();
+                this.draw();
+                requestAnimationFrame(() => this.gameLoop());
+            }
+        }
+
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            resizeCanvas();
+            if (window.game) {
+                window.game.updateScreenSize();
+                // Reposition tower to center
+                window.game.tower.x = SCREEN_WIDTH / 2;
+                window.game.tower.y = SCREEN_HEIGHT / 2;
+                // Update button positions
+                window.game.attackPowerButton = new Button(10, SCREEN_HEIGHT - 100, 150, 35, "Attack Power", window.game.attackPowerButton.cost);
+                window.game.attackSpeedButton = new Button(170, SCREEN_HEIGHT - 100, 150, 35, "Attack Speed", window.game.attackSpeedButton.cost);
+                window.game.attackRangeButton = new Button(330, SCREEN_HEIGHT - 100, 150, 35, "Attack Range", window.game.attackRangeButton.cost);
+                window.game.maxHealthButton = new Button(490, SCREEN_HEIGHT - 100, 150, 35, "Max Health", window.game.maxHealthButton.cost);
+                window.game.healthRegenButton = new Button(10, SCREEN_HEIGHT - 60, 150, 35, "Health Regen", window.game.healthRegenButton.cost);
+                window.game.speedButton = new Button(SCREEN_WIDTH - 120, 10, 100, 30, window.game.speedButton.text, 0);
+                window.game.superModeButton = new Button(SCREEN_WIDTH - 120, SCREEN_HEIGHT - 120, 100, 30, window.game.superModeButton.text, 0);
+            }
+        });
+
+        // Start the game
+        window.game = new Game();
+        window.game.gameLoop();
+    </script>
+</body>
+</html>
