@@ -75,6 +75,7 @@
                 this.lastRingFireTime = Date.now(); // Timer for ring fire when maxed
                 this.ringDensity = 4; // Number of bullets in ring (default 4)
                 this.ringSpeed = 10.0; // Ring fire interval in seconds (default 10)
+                this.speedBoostMultiplier = 1.0; // Speed boost multiplier (starts at 1.0, increases by 0.5 each cycle)
             }
 
             canShoot() {
@@ -614,6 +615,12 @@
                 if (this.tower.attack_speed >= 200) {
                     this.tower.ringDensity += 0.05; // Increase density by 0.05
                     this.tower.ringSpeed = Math.max(2.0, this.tower.ringSpeed - 0.002); // Decrease speed by 0.02, min 2.0 seconds
+                    
+                    // Check if ring speed reached minimum
+                    if (this.tower.ringSpeed <= 2.0) {
+                        this.tower.speedBoostMultiplier += 0.5; // Increase speed boost by 0.5
+                        this.tower.ringSpeed = 10.0; // Reset ring speed to 10 seconds
+                    }
                 }
             }
 
@@ -831,7 +838,9 @@
                 // Update enemies
                 for (let i = this.enemies.length - 1; i >= 0; i--) {
                     const enemy = this.enemies[i];
-                    enemy.update(this.tower.x, this.tower.y, this.speedMultiplier);
+                    // Apply speed boost multiplier (increases each time ring reaches 2s)
+                    let totalSpeedMultiplier = this.speedMultiplier * this.tower.speedBoostMultiplier;
+                    enemy.update(this.tower.x, this.tower.y, totalSpeedMultiplier);
                     
                     // Check collision with tower
                     const distance = Math.sqrt((enemy.x - this.tower.x) ** 2 + (enemy.y - this.tower.y) ** 2);
