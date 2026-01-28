@@ -165,6 +165,12 @@
                     this.health = Math.floor(25 * waveHealthMultiplier);
                     this.speed = ENEMY_SPEED * 0.4;
                     this.damage = Math.floor(15 * waveDamageMultiplier);
+                } else if (enemyType === 5) {
+                    // Boss enemy - appears every 10+ waves
+                    this.radius = ENEMY_RADIUS + 20; // Much larger
+                    this.health = Math.floor(100 * waveHealthMultiplier);
+                    this.speed = ENEMY_SPEED * 0.3; // Slow but tanky
+                    this.damage = Math.floor(30 * waveDamageMultiplier);
                 }
             }
 
@@ -186,7 +192,18 @@
             draw(ctx) {
                 ctx.beginPath();
                 ctx.arc(this.x, this.y, this.radius, 0, 2 * Math.PI);
-                ctx.fillStyle = RED;
+                
+                // Color based on power level and large enemy status
+                if (this.isLargeEnemy) {
+                    // Large enemies cycle through special colors
+                    const largeLevel = Math.floor(this.powerLevel / 10);
+                    const colors = ['#8B00FF', '#FF4500', '#32CD32', '#FFD700', '#FF1493'];
+                    ctx.fillStyle = colors[(largeLevel - 1) % colors.length] || '#8B00FF';
+                } else {
+                    // Regular enemies get redder as they get stronger
+                    const intensity = Math.min(255, 100 + this.powerLevel * 15);
+                    ctx.fillStyle = `rgb(${intensity}, 0, 0)`;
+                }
                 ctx.fill();
             }
         }
@@ -307,7 +324,7 @@
                 this.bullets = [];
                 this.coins = 0;
                 this.enemySpawnTimer = 0;
-                this.speedMultiplier = 1.0;
+                this.speedMultiplier = 2.0;
                 this.speedToggle = false;
                 this.gameOver = false;
                 this.explosionParticles = [];
@@ -326,7 +343,7 @@
                 this.attackRangeButton = new Button(330, SCREEN_HEIGHT - 100, 150, 35, "Attack Range", 4);
                 this.maxHealthButton = new Button(490, SCREEN_HEIGHT - 100, 150, 35, "Max Health", 8);
                 this.healthRegenButton = new Button(10, SCREEN_HEIGHT - 60, 150, 35, "Health Regen", 6);
-                this.speedButton = new Button(SCREEN_WIDTH - 120, 10, 100, 30, "Speed: 1x", 0);
+                this.speedButton = new Button(SCREEN_WIDTH - 120, 10, 100, 30, "Speed: 2x", 0);
 
                 // Super mode toggle button (bottom right)
                 this.superMode = false;
@@ -435,8 +452,8 @@
                 // Check speed toggle button
                 else if (this.speedButton.isClicked(x, y)) {
                     this.speedToggle = !this.speedToggle;
-                    this.speedMultiplier = this.speedToggle ? 2.0 : 1.0;
-                    this.speedButton.text = `Speed: ${this.speedToggle ? '2x' : '1x'}`;
+                    this.speedMultiplier = this.speedToggle ? 4.0 : 2.0;
+                    this.speedButton.text = `Speed: ${this.speedToggle ? '4x' : '2x'}`;
                 }
                 // Check super mode toggle button
                 else if (this.superModeButton.isClicked(x, y)) {
@@ -457,7 +474,7 @@
                 this.enemies = [];
                 this.bullets = [];
                 this.coins = 0;
-                this.speedMultiplier = 1.0;
+                this.speedMultiplier = 2.0;
                 this.speedToggle = false;
                 this.gameOver = false;
                 this.explosionParticles = [];
@@ -484,10 +501,10 @@
                 this.attackRangeButton = new Button(330, SCREEN_HEIGHT - 100, 150, 35, "Attack Range", this.attackRangeCost);
                 this.maxHealthButton = new Button(490, SCREEN_HEIGHT - 100, 150, 35, "Max Health", this.maxHealthCost);
                 this.healthRegenButton = new Button(10, SCREEN_HEIGHT - 60, 150, 35, "Health Regen", this.healthRegenCost);
-                this.speedButton = new Button(SCREEN_WIDTH - 120, 10, 100, 30, "Speed: 1x", 0);
+                this.speedButton = new Button(SCREEN_WIDTH - 120, 10, 100, 30, "Speed: 2x", 0);
                 this.superModeButton = new Button(SCREEN_WIDTH - 120, SCREEN_HEIGHT - 120, 100, 30, "Super: OFF", 0);
                 
-                this.speedButton.text = "Speed: 1x";
+                this.speedButton.text = "Speed: 2x";
                 
                 // Reset super mode
                 this.superMode = false;
@@ -503,26 +520,17 @@
                 
                 // No need to clamp since we want them outside the screen
                 
-                // Determine enemy type based on wave
-                let enemyType = 1;
-                if (this.currentWave >= 3) {
-                    enemyType = Math.random() < 0.7 ? 1 : 2;
-                }
-                if (this.currentWave >= 5) {
-                    const rand = Math.random();
-                    if (rand < 0.4) enemyType = 1;
-                    else if (rand < 0.8) enemyType = 2;
-                    else enemyType = 3;
-                }
-                if (this.currentWave >= 8) {
-                    const rand = Math.random();
-                    if (rand < 0.17) enemyType = 1;
-                    else if (rand < 0.5) enemyType = 2;
-                    else if (rand < 0.83) enemyType = 3;
-                    else enemyType = 4;
+                // Determine enemy power level - can be anywhere from 1 to current wave
+                let powerLevel = Math.floor(Math.random() * this.currentWave) + 1;
+                
+                // Small chance for large enemies every 10 levels
+                const maxLargeLevel = Math.floor(this.currentWave / 10);
+                if (maxLargeLevel > 0 && Math.random() < 0.15) { // 15% chance for large enemy
+                    const largeEnemyLevel = (Math.floor(Math.random() * maxLargeLevel) + 1) * 10;
+                    powerLevel = largeEnemyLevel;
                 }
                 
-                this.enemies.push(new Enemy(x, y, enemyType, this.currentWave));
+                this.enemies.push(new Enemy(x, y, powerLevel, this.currentWave));
             }
 
             findNearestEnemy() {
@@ -621,6 +629,8 @@
                                 this.enemies.splice(j, 1);
                                 this.autoUpgradeAll();
                                 this.enemiesKilledThisWave++;
+                                // Award coins based on enemy power level
+                                this.coins += Math.max(1, Math.floor(enemy.powerLevel * 0.5));
                             }
                             this.bullets.splice(i, 1);
                             break;
