@@ -64,6 +64,7 @@
                 this.attack_power = 2;
                 this.attack_speed = 1.5;
                 this.attack_range = 100;
+                this.displayRange = 100; // For smooth animation
                 this.max_health = 10;
                 this.health = 10;
                 this.health_regen = 0.1;
@@ -81,6 +82,14 @@
                 if (currentTime - this.last_regen_time >= 1000) {
                     this.health = Math.min(this.max_health, this.health + this.health_regen);
                     this.last_regen_time = currentTime;
+                }
+                
+                // Smooth tween for range display
+                const rangeDiff = this.attack_range - this.displayRange;
+                if (Math.abs(rangeDiff) > 0.5) {
+                    this.displayRange += rangeDiff * 0.1; // Smooth animation
+                } else {
+                    this.displayRange = this.attack_range; // Snap to final value
                 }
             }
 
@@ -106,9 +115,9 @@
             }
 
             draw(ctx) {
-                // Draw attack range
+                // Draw attack range (using animated displayRange)
                 ctx.beginPath();
-                ctx.arc(this.x, this.y, this.attack_range, 0, 2 * Math.PI);
+                ctx.arc(this.x, this.y, this.displayRange, 0, 2 * Math.PI);
                 ctx.strokeStyle = WHITE;
                 ctx.lineWidth = 1;
                 ctx.stroke();
@@ -137,7 +146,7 @@
         }
 
         class Enemy {
-            constructor(x, y, enemyType = 1, wave = 1) {
+            constructor(x, y, enemyType = 1, wave = 1, towerAttackPower = 2) {
                 this.x = x;
                 this.y = y;
                 this.type = enemyType;
@@ -171,7 +180,19 @@
                     this.health = Math.floor(100 * waveHealthMultiplier);
                     this.speed = ENEMY_SPEED * 0.3; // Slow but tanky
                     this.damage = Math.floor(30 * waveDamageMultiplier);
+                } else if (enemyType === 6) {
+                    // Super boss - appears only once every 10 waves
+                    this.radius = ENEMY_RADIUS + 30; // Enormous
+                    this.health = Math.floor(towerAttackPower * 20 * 33); // Health scales with tower power (33x - 2/3 of previous)
+                    this.speed = ENEMY_SPEED * 0.2; // Very slow
+                    this.damage = Math.floor(50 * waveDamageMultiplier);
                 }
+                
+                // Store max health for healthbar calculations
+                this.maxHealth = this.health;
+                
+                // Track last attack time for boss attack cooldown (only for type 6)
+                this.lastAttackTime = 0;
             }
 
             update(towerX, towerY, speedMultiplier = 1.0) {
@@ -192,19 +213,31 @@
             draw(ctx) {
                 ctx.beginPath();
                 ctx.arc(this.x, this.y, this.radius, 0, 2 * Math.PI);
-                
-                // Color based on power level and large enemy status
-                if (this.isLargeEnemy) {
-                    // Large enemies cycle through special colors
-                    const largeLevel = Math.floor(this.powerLevel / 10);
-                    const colors = ['#8B00FF', '#FF4500', '#32CD32', '#FFD700', '#FF1493'];
-                    ctx.fillStyle = colors[(largeLevel - 1) % colors.length] || '#8B00FF';
-                } else {
-                    // Regular enemies get redder as they get stronger
-                    const intensity = Math.min(255, 100 + this.powerLevel * 15);
-                    ctx.fillStyle = `rgb(${intensity}, 0, 0)`;
-                }
+                ctx.fillStyle = RED;
                 ctx.fill();
+                
+                // Draw healthbar for bosses (types 5 and 6)
+                if (this.type === 5 || this.type === 6) {
+                    const barWidth = this.radius * 2;
+                    const barHeight = 8;
+                    const barX = this.x - barWidth / 2;
+                    const barY = this.y - this.radius - barHeight - 5;
+                    
+                    // Background bar
+                    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+                    ctx.fillRect(barX, barY, barWidth, barHeight);
+                    
+                    // Health bar
+                    const healthPercent = this.health / this.maxHealth;
+                    const healthWidth = barWidth * healthPercent;
+                    ctx.fillStyle = healthPercent > 0.5 ? '#00ff00' : healthPercent > 0.25 ? '#ffff00' : '#ff0000';
+                    ctx.fillRect(barX, barY, healthWidth, barHeight);
+                    
+                    // Border
+                    ctx.strokeStyle = 'white';
+                    ctx.lineWidth = 1;
+                    ctx.strokeRect(barX, barY, barWidth, barHeight);
+                }
             }
         }
 
@@ -327,8 +360,9 @@
                 this.speedMultiplier = 2.0;
                 this.speedToggle = false;
                 this.gameOver = false;
+                this.killsSinceLastUpgrade = 0;
                 this.explosionParticles = [];
-                
+
                 // Wave system
                 this.currentWave = 1;
                 this.enemiesInWave = 10;
@@ -336,6 +370,7 @@
                 this.enemiesKilledThisWave = 0;
                 this.waveStartTime = Date.now();
                 this.showWaveText = true;
+                this.bossSpawnedThisWave = false;
 
                 // Shop buttons - positioned relative to screen size
                 this.attackPowerButton = new Button(10, SCREEN_HEIGHT - 100, 150, 35, "Attack Power", 5);
@@ -388,12 +423,17 @@
                 this.attackPowerButton.cost = this.attackPowerCost;
                 
                 // Upgrade attack speed
-                this.tower.attack_speed += 0.5;
+                if (this.tower.attack_speed < 250) {
+                    this.tower.attack_speed += 0.5;
+                }
                 this.attackSpeedCost = Math.floor(this.attackSpeedCost * 1.3);
                 this.attackSpeedButton.cost = this.attackSpeedCost;
                 
                 // Upgrade attack range
-                this.tower.attack_range += 20;
+                if (this.tower.attack_range < 1400) {
+                    this.tower.attack_range += 20;
+                    this.tower.attack_range = Math.min(1400, this.tower.attack_range);
+                }
                 this.attackRangeCost = Math.floor(this.attackRangeCost * 1.4);
                 this.attackRangeButton.cost = this.attackRangeCost;
                 
@@ -421,16 +461,17 @@
                     this.attackPowerButton.cost = this.attackPowerCost;
                 }
                 // Check attack speed button
-                else if (this.attackSpeedButton.isClicked(x, y) && this.coins >= (this.superMode ? 1 : this.attackSpeedCost)) {
+                else if (this.attackSpeedButton.isClicked(x, y) && this.coins >= (this.superMode ? 1 : this.attackSpeedCost) && this.tower.attack_speed < 250) {
                     this.coins -= (this.superMode ? 1 : this.attackSpeedCost);
                     this.tower.attack_speed += 0.5;
                     this.attackSpeedCost = Math.floor(this.attackSpeedCost * 1.3);
                     this.attackSpeedButton.cost = this.attackSpeedCost;
                 }
                 // Check attack range button
-                else if (this.attackRangeButton.isClicked(x, y) && this.coins >= (this.superMode ? 1 : this.attackRangeCost)) {
+                else if (this.attackRangeButton.isClicked(x, y) && this.coins >= (this.superMode ? 1 : this.attackRangeCost) && this.tower.attack_range < 1400) {
                     this.coins -= (this.superMode ? 1 : this.attackRangeCost);
                     this.tower.attack_range += 20;
+                    this.tower.attack_range = Math.min(1400, this.tower.attack_range);
                     this.attackRangeCost = Math.floor(this.attackRangeCost * 1.4);
                     this.attackRangeButton.cost = this.attackRangeCost;
                 }
@@ -471,12 +512,14 @@
             restartGame() {
                 this.updateScreenSize();
                 this.tower = new Tower(SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2);
+                this.tower.displayRange = this.tower.attack_range; // Initialize display range
                 this.enemies = [];
                 this.bullets = [];
                 this.coins = 0;
                 this.speedMultiplier = 2.0;
                 this.speedToggle = false;
                 this.gameOver = false;
+                this.killsSinceLastUpgrade = 0;
                 this.explosionParticles = [];
                 
                 // Reset wave system
@@ -487,6 +530,7 @@
                 this.waveStartTime = Date.now();
                 this.showWaveText = true;
                 this.enemySpawnTimer = 0;
+                this.bossSpawnedThisWave = false;
                 
                 // Reset upgrade costs
                 this.attackPowerCost = 5;
@@ -518,9 +562,18 @@
                 let x = SCREEN_WIDTH / 2 + Math.cos(angle) * spawnDistance;
                 let y = SCREEN_HEIGHT / 2 + Math.sin(angle) * spawnDistance;
                 
-                // No need to clamp since we want them outside the screen
+                // Check for special boss on waves divisible by 10 (spawn among first 3 enemies)
+                if (this.currentWave % 10 === 0 && !this.bossSpawnedThisWave && this.enemiesSpawnedThisWave < 3) {
+                    // Spawn the super boss just off screen with a wider radius
+                    const bossSpawnDistance = Math.max(SCREEN_WIDTH, SCREEN_HEIGHT) * 0.55 + 30; // Just off screen with wider radius
+                    const bossX = SCREEN_WIDTH / 2 + Math.cos(angle) * bossSpawnDistance;
+                    const bossY = SCREEN_HEIGHT / 2 + Math.sin(angle) * bossSpawnDistance;
+                    this.enemies.push(new Enemy(bossX, bossY, 6, this.currentWave, this.tower.attack_power));
+                    this.bossSpawnedThisWave = true;
+                    return;
+                }
                 
-                // Determine enemy power level - can be anywhere from 1 to current wave
+                // Regular enemy spawning logic
                 let powerLevel = Math.floor(Math.random() * this.currentWave) + 1;
                 
                 // Small chance for large enemies every 10 levels
@@ -530,7 +583,21 @@
                     powerLevel = largeEnemyLevel;
                 }
                 
-                this.enemies.push(new Enemy(x, y, powerLevel, this.currentWave));
+                // Map power level to enemy types 1-5
+                let enemyType;
+                if (powerLevel >= 100) {
+                    enemyType = 5; // Boss type
+                } else if (powerLevel >= 25) {
+                    enemyType = 4;
+                } else if (powerLevel >= 12) {
+                    enemyType = 3;
+                } else if (powerLevel >= 5) {
+                    enemyType = 2;
+                } else {
+                    enemyType = 1;
+                }
+                
+                this.enemies.push(new Enemy(x, y, enemyType, this.currentWave, this.tower.attack_power));
             }
 
             findNearestEnemy() {
@@ -574,7 +641,7 @@
                         this.enemySpawnTimer = 0;
                     }
                 } else if (this.enemies.length === 0 && this.enemiesSpawnedThisWave >= this.enemiesInWave) {
-                    // Wave completion
+                    // Wave completion - only when all enemies (including bosses) are dead
                     const bonus = Math.max(5, Math.floor(this.coins * 0.1) + 5);
                     this.coins += bonus;
                     
@@ -584,6 +651,7 @@
                     this.enemiesKilledThisWave = 0;
                     this.waveStartTime = Date.now();
                     this.showWaveText = true;
+                    this.bossSpawnedThisWave = false; // Reset boss spawn flag
                 }
 
                 // Update enemies
@@ -594,12 +662,29 @@
                     // Check collision with tower
                     const distance = Math.sqrt((enemy.x - this.tower.x) ** 2 + (enemy.y - this.tower.y) ** 2);
                     if (distance < this.tower.radius + enemy.radius) {
-                        this.tower.takeDamage(enemy.damage);
-                        this.enemies.splice(i, 1);
-                        if (this.tower.health <= 0) {
-                            this.createExplosion(this.tower.x, this.tower.y, 50);
-                            this.gameOver = true;
-                            break;
+                        // Boss enemies (type 6) don't end the round when they touch the tower
+                        if (enemy.type === 6) {
+                            // Boss can only attack once per second
+                            const currentTime = Date.now();
+                            if (currentTime - enemy.lastAttackTime >= 1000) { // 1000ms = 1 second
+                                this.tower.takeDamage(enemy.damage);
+                                enemy.lastAttackTime = currentTime;
+                                // Don't remove the boss - let it continue attacking
+                                if (this.tower.health <= 0) {
+                                    this.createExplosion(this.tower.x, this.tower.y, 50);
+                                    this.restartGame();
+                                    break;
+                                }
+                            }
+                        } else {
+                            // Regular enemies are removed on collision
+                            this.tower.takeDamage(enemy.damage);
+                            this.enemies.splice(i, 1);
+                            if (this.tower.health <= 0) {
+                                this.createExplosion(this.tower.x, this.tower.y, 50);
+                                this.restartGame();
+                                break;
+                            }
                         }
                     }
                 }
@@ -627,10 +712,18 @@
                         if (bullet.collidesWith(enemy)) {
                             if (enemy.takeDamage(bullet.damage)) {
                                 this.enemies.splice(j, 1);
-                                this.autoUpgradeAll();
+                                this.killsSinceLastUpgrade++;
                                 this.enemiesKilledThisWave++;
                                 // Award coins based on enemy power level
                                 this.coins += Math.max(1, Math.floor(enemy.powerLevel * 0.5));
+                                
+                                // Auto-upgrade only every 2 kills
+                                if (this.killsSinceLastUpgrade >= 2) {
+                                    // Simple explosion effect for upgrade feedback
+                                    this.createExplosion(enemy.x, enemy.y, 15);
+                                    this.autoUpgradeAll();
+                                    this.killsSinceLastUpgrade = 0;
+                                }
                             }
                             this.bullets.splice(i, 1);
                             break;
