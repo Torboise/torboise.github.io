@@ -70,6 +70,8 @@
                 this.health_regen = 0.1;
                 this.last_shot_time = Date.now();
                 this.last_regen_time = Date.now();
+                this.borderModeWave = -1; // Track which wave border mode started
+                this.borderAlpha = 1.0; // Alpha for fading border
             }
 
             canShoot() {
@@ -118,7 +120,7 @@
                 return null;
             }
 
-            draw(ctx) {
+            draw(ctx, game) {
                 // Draw attack range (using animated displayRange)
                 ctx.beginPath();
                 ctx.arc(this.x, this.y, this.displayRange, 0, 2 * Math.PI);
@@ -129,65 +131,120 @@
                 // Draw wrapping lines when circle breaches screen edges
                 const radius = this.displayRange;
                 
-                // Check if circle extends beyond screen boundaries and draw connecting lines
-                // Left edge
-                if (this.x - radius < 0) {
-                    const intersectY1 = this.y - Math.sqrt(radius * radius - this.x * this.x);
-                    const intersectY2 = this.y + Math.sqrt(radius * radius - this.x * this.x);
-                    if (intersectY1 >= 0 && intersectY1 <= SCREEN_HEIGHT && intersectY2 >= 0 && intersectY2 <= SCREEN_HEIGHT) {
-                        ctx.beginPath();
-                        ctx.moveTo(0, intersectY1);
-                        ctx.lineTo(0, intersectY2);
-                        ctx.strokeStyle = WHITE;
+                // Check if circle completely encompasses the screen
+                const maxDistanceToCorner = Math.max(
+                    Math.sqrt(this.x * this.x + this.y * this.y), // Top-left corner
+                    Math.sqrt((SCREEN_WIDTH - this.x) * (SCREEN_WIDTH - this.x) + this.y * this.y), // Top-right corner
+                    Math.sqrt(this.x * this.x + (SCREEN_HEIGHT - this.y) * (SCREEN_HEIGHT - this.y)), // Bottom-left corner
+                    Math.sqrt((SCREEN_WIDTH - this.x) * (SCREEN_WIDTH - this.x) + (SCREEN_HEIGHT - this.y) * (SCREEN_HEIGHT - this.y)) // Bottom-right corner
+                );
+                
+                if (radius >= maxDistanceToCorner) {
+                    // Track when border mode starts
+                    if (this.borderModeWave === -1) {
+                        this.borderModeWave = game.currentWave; // Need to pass game context
+                        this.borderAlpha = 1.0;
+                    }
+                    
+                    // Fade out if we're past the wave where border mode started
+                    if (game.currentWave > this.borderModeWave) {
+                        this.borderAlpha = Math.max(0, this.borderAlpha - 0.02); // Fade out gradually
+                    }
+                    
+                    // Only draw if alpha > 0
+                    if (this.borderAlpha > 0) {
+                        // Circle completely encompasses screen - draw lines on all four edges
+                        ctx.strokeStyle = `rgba(255, 255, 255, ${this.borderAlpha})`;
                         ctx.lineWidth = 1;
+                        
+                        // Left edge
+                        ctx.beginPath();
+                        ctx.moveTo(0, 0);
+                        ctx.lineTo(0, SCREEN_HEIGHT);
+                        ctx.stroke();
+                        
+                        // Right edge
+                        ctx.beginPath();
+                        ctx.moveTo(SCREEN_WIDTH, 0);
+                        ctx.lineTo(SCREEN_WIDTH, SCREEN_HEIGHT);
+                        ctx.stroke();
+                        
+                        // Top edge
+                        ctx.beginPath();
+                        ctx.moveTo(0, 0);
+                        ctx.lineTo(SCREEN_WIDTH, 0);
+                        ctx.stroke();
+                        
+                        // Bottom edge
+                        ctx.beginPath();
+                        ctx.moveTo(0, SCREEN_HEIGHT);
+                        ctx.lineTo(SCREEN_WIDTH, SCREEN_HEIGHT);
                         ctx.stroke();
                     }
-                }
-                
-                // Right edge
-                if (this.x + radius > SCREEN_WIDTH) {
-                    const dx = SCREEN_WIDTH - this.x;
-                    if (dx * dx < radius * radius) {
-                        const intersectY1 = this.y - Math.sqrt(radius * radius - dx * dx);
-                        const intersectY2 = this.y + Math.sqrt(radius * radius - dx * dx);
+                } else {
+                    // Reset border mode when circle shrinks back
+                    this.borderModeWave = -1;
+                    this.borderAlpha = 1.0;
+                    // Circle partially extends beyond screen - draw intersection lines
+                    // Left edge
+                    if (this.x - radius < 0) {
+                        const intersectY1 = this.y - Math.sqrt(radius * radius - this.x * this.x);
+                        const intersectY2 = this.y + Math.sqrt(radius * radius - this.x * this.x);
                         if (intersectY1 >= 0 && intersectY1 <= SCREEN_HEIGHT && intersectY2 >= 0 && intersectY2 <= SCREEN_HEIGHT) {
                             ctx.beginPath();
-                            ctx.moveTo(SCREEN_WIDTH, intersectY1);
-                            ctx.lineTo(SCREEN_WIDTH, intersectY2);
+                            ctx.moveTo(0, intersectY1);
+                            ctx.lineTo(0, intersectY2);
                             ctx.strokeStyle = WHITE;
                             ctx.lineWidth = 1;
                             ctx.stroke();
                         }
                     }
-                }
-                
-                // Top edge
-                if (this.y - radius < 0) {
-                    const intersectX1 = this.x - Math.sqrt(radius * radius - this.y * this.y);
-                    const intersectX2 = this.x + Math.sqrt(radius * radius - this.y * this.y);
-                    if (intersectX1 >= 0 && intersectX1 <= SCREEN_WIDTH && intersectX2 >= 0 && intersectX2 <= SCREEN_WIDTH) {
-                        ctx.beginPath();
-                        ctx.moveTo(intersectX1, 0);
-                        ctx.lineTo(intersectX2, 0);
-                        ctx.strokeStyle = WHITE;
-                        ctx.lineWidth = 1;
-                        ctx.stroke();
+                    
+                    // Right edge
+                    if (this.x + radius > SCREEN_WIDTH) {
+                        const dx = SCREEN_WIDTH - this.x;
+                        if (dx * dx < radius * radius) {
+                            const intersectY1 = this.y - Math.sqrt(radius * radius - dx * dx);
+                            const intersectY2 = this.y + Math.sqrt(radius * radius - dx * dx);
+                            if (intersectY1 >= 0 && intersectY1 <= SCREEN_HEIGHT && intersectY2 >= 0 && intersectY2 <= SCREEN_HEIGHT) {
+                                ctx.beginPath();
+                                ctx.moveTo(SCREEN_WIDTH, intersectY1);
+                                ctx.lineTo(SCREEN_WIDTH, intersectY2);
+                                ctx.strokeStyle = WHITE;
+                                ctx.lineWidth = 1;
+                                ctx.stroke();
+                            }
+                        }
                     }
-                }
-                
-                // Bottom edge
-                if (this.y + radius > SCREEN_HEIGHT) {
-                    const dy = SCREEN_HEIGHT - this.y;
-                    if (dy * dy < radius * radius) {
-                        const intersectX1 = this.x - Math.sqrt(radius * radius - dy * dy);
-                        const intersectX2 = this.x + Math.sqrt(radius * radius - dy * dy);
+                    
+                    // Top edge
+                    if (this.y - radius < 0) {
+                        const intersectX1 = this.x - Math.sqrt(radius * radius - this.y * this.y);
+                        const intersectX2 = this.x + Math.sqrt(radius * radius - this.y * this.y);
                         if (intersectX1 >= 0 && intersectX1 <= SCREEN_WIDTH && intersectX2 >= 0 && intersectX2 <= SCREEN_WIDTH) {
                             ctx.beginPath();
-                            ctx.moveTo(intersectX1, SCREEN_HEIGHT);
-                            ctx.lineTo(intersectX2, SCREEN_HEIGHT);
+                            ctx.moveTo(intersectX1, 0);
+                            ctx.lineTo(intersectX2, 0);
                             ctx.strokeStyle = WHITE;
                             ctx.lineWidth = 1;
                             ctx.stroke();
+                        }
+                    }
+                    
+                    // Bottom edge
+                    if (this.y + radius > SCREEN_HEIGHT) {
+                        const dy = SCREEN_HEIGHT - this.y;
+                        if (dy * dy < radius * radius) {
+                            const intersectX1 = this.x - Math.sqrt(radius * radius - dy * dy);
+                            const intersectX2 = this.x + Math.sqrt(radius * radius - dy * dy);
+                            if (intersectX1 >= 0 && intersectX1 <= SCREEN_WIDTH && intersectX2 >= 0 && intersectX2 <= SCREEN_WIDTH) {
+                                ctx.beginPath();
+                                ctx.moveTo(intersectX1, SCREEN_HEIGHT);
+                                ctx.lineTo(intersectX2, SCREEN_HEIGHT);
+                                ctx.strokeStyle = WHITE;
+                                ctx.lineWidth = 1;
+                                ctx.stroke();
+                            }
                         }
                     }
                 }
@@ -819,7 +876,7 @@
 
                 // Draw tower (only if not game over)
                 if (!this.gameOver) {
-                    this.tower.draw(ctx);
+                    this.tower.draw(ctx, this);
                 }
 
                 // Draw enemies
