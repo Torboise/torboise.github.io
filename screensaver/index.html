@@ -522,7 +522,7 @@
                 this.speedToggle = false;
                 this.gameOver = false;
                 this.killsSinceLastUpgrade = 0;
-                this.upgradeThreshold = Math.floor(Math.random() * 5) + 1; // Random number between 1-5
+                this.upgradeThreshold = Math.floor(Math.random() * 4) + 1; // Random number between 1-4
                 this.explosionParticles = [];
 
                 // Wave system
@@ -613,7 +613,7 @@
                 // Ring upgrades (only when attack speed is maxed)
                 if (this.tower.attack_speed >= 200) {
                     this.tower.ringDensity += 0.05; // Increase density by 0.05
-                    this.tower.ringSpeed = Math.max(4.0, this.tower.ringSpeed - 0.002); // Decrease speed by 0.02, min 2.0 seconds
+                    this.tower.ringSpeed = Math.max(2.0, this.tower.ringSpeed - 0.002); // Decrease speed by 0.02, min 2.0 seconds
                 }
             }
 
@@ -692,7 +692,7 @@
                 if (this.tower.attack_speed >= 200) {
                     this.upgradeThreshold = Math.floor(Math.random() * 6) + 3; // Random number between 3-8 when rings active
                 } else {
-                    this.upgradeThreshold = Math.floor(Math.random() * 5) + 1; // Random number between 1-5 normally
+                    this.upgradeThreshold = Math.floor(Math.random() * 4) + 1; // Random number between 1-4 normally
                 }
                 this.explosionParticles = [];
                 
@@ -808,16 +808,7 @@
                 // Spawn enemies
                 if (this.enemiesSpawnedThisWave < this.enemiesInWave) {
                     this.enemySpawnTimer++;
-                    let currentSpawnRate;
-                    if (this.currentWave <= 20) {
-                        // Original formula for waves 1-20
-                        currentSpawnRate = Math.max(3, Math.floor(30 / Math.pow(1.15, this.currentWave - 1)));
-                    } else {
-                        // After wave 20, linear interpolation from wave 20's rate to 0.3 frames (0.005s) by wave 100
-                        const wave20Rate = Math.max(3, Math.floor(30 / Math.pow(1.15, 20 - 1))); // Rate at wave 20
-                        const progress = Math.min(80, this.currentWave - 21) / 79; // 0 to 1 over waves 21-100 (80 waves)
-                        currentSpawnRate = Math.max(0.3, wave20Rate * (1 - progress) + 0.3 * progress);
-                    }
+                    const currentSpawnRate = Math.max(3, Math.floor(30 / Math.pow(1.15, this.currentWave - 1)));
                     if (this.enemySpawnTimer >= currentSpawnRate) {
                         this.spawnEnemy();
                         this.enemiesSpawnedThisWave++;
@@ -912,7 +903,7 @@
                                     if (this.tower.attack_speed >= 200) {
                                         this.upgradeThreshold = Math.floor(Math.random() * 6) + 3; // Random number between 3-8 when rings active
                                     } else {
-                                        this.upgradeThreshold = Math.floor(Math.random() * 5) + 1; // Random number between 1-5 normally
+                                        this.upgradeThreshold = Math.floor(Math.random() * 3) + 1; // Random number between 1-4 normally
                                     }
                                 }
                             }
@@ -979,30 +970,6 @@
                     let statsLine1 = `Power: ${this.tower.attack_power}  Speed: ${this.tower.attack_speed.toFixed(1)}  Range: ${this.tower.attack_range}`;
                     let statsLine2 = `Health: ${this.tower.health.toFixed(1)}/${this.tower.max_health}  Regen: ${this.tower.health_regen.toFixed(1)}/s`;
                     
-                    // Calculate current spawn rate for display
-                    let currentSpawnRate;
-                    if (this.currentWave <= 20) {
-                        // Original formula for waves 1-20
-                        currentSpawnRate = Math.max(3, Math.floor(30 / Math.pow(1.15, this.currentWave - 1)));
-                    } else {
-                        // After wave 20, linear interpolation from wave 20's rate to 0.3 frames by wave 100
-                        const wave20Rate = Math.max(3, Math.floor(30 / Math.pow(1.15, 20 - 1)));
-                        const progress = Math.min(80, this.currentWave - 21) / 79;
-                        currentSpawnRate = Math.max(0.3, wave20Rate * (1 - progress) + 0.3 * progress);
-                    }
-                    const spawnRateSeconds = (currentSpawnRate / 60).toFixed(3);
-                    let statsLine3 = `Spawn Rate: ${spawnRateSeconds}s`;
-                    
-                    // Ring timer calculation (only when rings are enabled)
-                    let statsLine4 = '';
-                    if (this.tower.attack_speed >= 200) {
-                        const currentTime = Date.now();
-                        const timeSinceLastRing = currentTime - this.tower.lastRingFireTime;
-                        const ringInterval = this.tower.ringSpeed * 1000;
-                        const timeUntilNextRing = Math.max(0, ringInterval - timeSinceLastRing);
-                        statsLine4 = `Next Ring: ${(timeUntilNextRing / 1000).toFixed(1)}s`;
-                    }
-                    
                     // Add ring stats when speed is maxed
                     if (this.tower.attack_speed >= 200) {
                         statsLine1 += `  Ring: ${Math.floor(this.tower.ringDensity)} @ ${this.tower.ringSpeed.toFixed(2)}s`;
@@ -1010,9 +977,17 @@
                     
                     ctx.fillText(statsLine1, 10, 30);
                     ctx.fillText(statsLine2, 10, 60);
-                    ctx.fillText(statsLine3, 10, 120);
-                    if (statsLine4) {
-                        ctx.fillText(statsLine4, 10, 150);
+                    
+                    // Ring timer (top right, only when rings are enabled)
+                    if (this.tower.attack_speed >= 200) {
+                        const currentTime = Date.now();
+                        const timeSinceLastRing = currentTime - this.tower.lastRingFireTime;
+                        const ringInterval = this.tower.ringSpeed * 1000;
+                        const timeUntilNextRing = Math.max(0, ringInterval - timeSinceLastRing);
+                        
+                        ctx.textAlign = 'right';
+                        ctx.fillText(`Next Ring: ${(timeUntilNextRing / 1000).toFixed(1)}s`, SCREEN_WIDTH - 10, 30);
+                        ctx.textAlign = 'left'; // Reset alignment
                     }
                     
                     // Wave info
