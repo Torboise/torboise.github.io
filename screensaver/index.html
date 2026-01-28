@@ -808,9 +808,16 @@
                 // Spawn enemies
                 if (this.enemiesSpawnedThisWave < this.enemiesInWave) {
                     this.enemySpawnTimer++;
-                    // Linear interpolation from 30 frames (0.5s) at wave 1 to 0.3 frames (0.005s) at wave 100
-                    const progress = Math.min(99, this.currentWave - 1) / 99; // 0 to 1 over 99 waves
-                    const currentSpawnRate = Math.max(0.3, 30 * (1 - progress) + 0.3 * progress);
+                    let currentSpawnRate;
+                    if (this.currentWave <= 20) {
+                        // Original formula for waves 1-20
+                        currentSpawnRate = Math.max(3, Math.floor(30 / Math.pow(1.15, this.currentWave - 1)));
+                    } else {
+                        // After wave 20, linear interpolation from wave 20's rate to 0.3 frames (0.005s) by wave 100
+                        const wave20Rate = Math.max(3, Math.floor(30 / Math.pow(1.15, 20 - 1))); // Rate at wave 20
+                        const progress = Math.min(80, this.currentWave - 21) / 79; // 0 to 1 over waves 21-100 (80 waves)
+                        currentSpawnRate = Math.max(0.3, wave20Rate * (1 - progress) + 0.3 * progress);
+                    }
                     if (this.enemySpawnTimer >= currentSpawnRate) {
                         this.spawnEnemy();
                         this.enemiesSpawnedThisWave++;
@@ -973,8 +980,16 @@
                     let statsLine2 = `Health: ${this.tower.health.toFixed(1)}/${this.tower.max_health}  Regen: ${this.tower.health_regen.toFixed(1)}/s`;
                     
                     // Calculate current spawn rate for display
-                    const progress = Math.min(99, this.currentWave - 1) / 99;
-                    const currentSpawnRate = Math.max(0.3, 30 * (1 - progress) + 0.3 * progress);
+                    let currentSpawnRate;
+                    if (this.currentWave <= 20) {
+                        // Original formula for waves 1-20
+                        currentSpawnRate = Math.max(3, Math.floor(30 / Math.pow(1.15, this.currentWave - 1)));
+                    } else {
+                        // After wave 20, linear interpolation from wave 20's rate to 0.3 frames by wave 100
+                        const wave20Rate = Math.max(3, Math.floor(30 / Math.pow(1.15, 20 - 1)));
+                        const progress = Math.min(80, this.currentWave - 21) / 79;
+                        currentSpawnRate = Math.max(0.3, wave20Rate * (1 - progress) + 0.3 * progress);
+                    }
                     const spawnRateSeconds = (currentSpawnRate / 60).toFixed(3);
                     let statsLine3 = `Spawn Rate: ${spawnRateSeconds}s`;
                     
