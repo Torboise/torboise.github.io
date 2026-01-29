@@ -331,19 +331,21 @@
                     this.damage = Math.floor(15 * waveDamageMultiplier);
                 } else if (enemyType === 5) {
                     // Boss enemy - appears every 10+ waves
-                    this.radius = ENEMY_RADIUS + 20; // Much larger
+                    const baseRadius = ENEMY_RADIUS + 10; // Half the original size (was +20)
+                    this.radius = Math.min(baseRadius + (wave - 1) * 0.4, baseRadius + 40); // Half scaling and cap
                     this.health = Math.floor(100 * waveHealthMultiplier);
                     this.speed = ENEMY_SPEED * 0.3; // Slow but tanky
                     this.damage = Math.floor(30 * waveDamageMultiplier);
                 } else if (enemyType === 6) {
                     // Super boss - appears only once every 10 waves
-                    this.radius = ENEMY_RADIUS + 30; // Enormous
+                    const baseRadius = ENEMY_RADIUS + 30;
+                    this.radius = Math.min(baseRadius + (wave - 1) * 1.2, baseRadius + 120); // Scale with wave, cap at +120
                     this.health = Math.floor(towerAttackPower * 20 * 33); // Health scales with tower power (33x - 2/3 of previous)
                     this.speed = ENEMY_SPEED * 0.2; // Very slow
                     this.damage = Math.floor(50 * waveDamageMultiplier);
                 } else if (enemyType === 7) {
                     // Brute enemy - appears after wave 25, uncommon
-                    this.radius = ENEMY_RADIUS + 12; // Larger than type 4
+                    this.radius = ENEMY_RADIUS + 28; // Larger than type 5 bosses (which are +20)
                     this.health = Math.floor(towerAttackPower * 10); // Health = tower power * 10
                     this.speed = ENEMY_SPEED * 0.5; // Moderate speed
                     this.damage = Math.floor(20 * waveDamageMultiplier);
@@ -361,8 +363,11 @@
                 const dy = towerY - this.y;
                 const distance = Math.sqrt(dx * dx + dy * dy);
                 if (distance > 0) {
-                    this.x += (dx / distance) * this.speed * speedMultiplier;
-                    this.y += (dy / distance) * this.speed * speedMultiplier;
+                    // Only super bosses (type 6) are not affected by speed boost multiplier
+                    const effectiveSpeedMultiplier = (this.type === 6) ? 
+                        (speedMultiplier > 2.0 ? 2.0 : speedMultiplier) : speedMultiplier;
+                    this.x += (dx / distance) * this.speed * effectiveSpeedMultiplier;
+                    this.y += (dy / distance) * this.speed * effectiveSpeedMultiplier;
                 }
             }
 
@@ -381,21 +386,36 @@
                     currentRadius = this.radius * scale;
                 }
                 
+                // Draw glow effect for super bosses (type 6)
+                if (this.type === 6) {
+                    // Create a multi-layer glow effect
+                    for (let layer = 3; layer >= 1; layer--) {
+                        const glowRadius = currentRadius + layer * 3;
+                        const glowAlpha = 0.15 / layer; // Decreasing opacity for outer layers
+                        ctx.beginPath();
+                        ctx.arc(this.x, this.y, glowRadius, 0, 2 * Math.PI);
+                        ctx.fillStyle = `rgba(128, 0, 128, ${glowAlpha})`; // Light purple glow
+                        ctx.fill();
+                    }
+                }
+                
                 ctx.beginPath();
                 ctx.arc(this.x, this.y, currentRadius, 0, 2 * Math.PI);
                 
                 // Set color based on enemy type
                 if (this.type === 7) {
                     ctx.fillStyle = '#FFFF00'; // Yellow for brutes
-                } else if (this.type === 5 || this.type === 6) {
-                    ctx.fillStyle = '#FF00FF'; // Magenta for bosses
+                } else if (this.type === 5) {
+                    ctx.fillStyle = '#FF8000'; // Orange for Type 5 bosses
+                } else if (this.type === 6) {
+                    ctx.fillStyle = '#FF00FF'; // Magenta for Type 6 super bosses
                 } else {
                     ctx.fillStyle = RED; // Red for regular enemies
                 }
                 ctx.fill();
                 
-                // Draw healthbar for bosses and brutes (types 5, 6, and 7)
-                if (this.type === 5 || this.type === 6 || this.type === 7) {
+                // Draw healthbar for bosses and brutes (types 6 and 7)
+                if (this.type === 6 || this.type === 7) {
                     const barWidth = currentRadius * 2;
                     const barHeight = 8;
                     const barX = this.x - barWidth / 2;
@@ -416,8 +436,8 @@
                     ctx.lineWidth = 1;
                     ctx.strokeRect(barX, barY, barWidth, barHeight);
                     
-                    // Health text (only for bosses, not brutes)
-                    if (this.type === 5 || this.type === 6) {
+                    // Health text (only for type 6 bosses, not brutes)
+                    if (this.type === 6) {
                         ctx.fillStyle = 'white';
                         ctx.font = '12px Arial';
                         ctx.textAlign = 'center';
@@ -638,7 +658,12 @@
                 
                 // Ring upgrades (only when attack speed is maxed)
                 if (this.tower.attack_speed >= 200) {
-                    this.tower.ringDensity += 0.05; // Increase density by 0.05
+                    // Cap ring density at 1000 bullets, then reset to 4
+                    if (Math.floor(this.tower.ringDensity) < 1000) {
+                        this.tower.ringDensity += 0.05; // Increase density by 0.05
+                    } else if (Math.floor(this.tower.ringDensity) >= 1000) {
+                        this.tower.ringDensity = 4; // Reset to 4 when reaching 1000
+                    }
                     this.tower.ringSpeed = Math.max(2.0, this.tower.ringSpeed - 0.002); // Decrease speed by 0.02, min 2.0 seconds
                     
                     // Check if ring speed reached minimum
@@ -779,12 +804,23 @@
                     return;
                 }
                 
-                // Regular enemy spawning logic
-                let powerLevel = Math.floor(Math.random() * this.currentWave) + 1;
+                // Regular enemy spawning logic - ensure plenty of weak enemies at all levels
+                let powerLevel;
+                if (Math.random() < 0.4) { // 40% chance for weak enemies (types 1-2)
+                    powerLevel = Math.floor(Math.random() * 10) + 1; // Power level 1-10
+                } else {
+                    powerLevel = Math.floor(Math.random() * this.currentWave) + 1; // Original scaling
+                }
                 
                 // Check for brute enemy between waves 5-24 (2% chance)
                 if (this.currentWave >= 5 && this.currentWave <= 24 && Math.random() < 0.02) {
                     this.enemies.push(new Enemy(x, y, 7, this.currentWave, this.tower.attack_power)); // Brute enemy
+                    return;
+                }
+                
+                // Check for regular boss (type 5) every wave 10+ with 8% chance
+                if (this.currentWave >= 10 && Math.random() < 0.08) {
+                    this.enemies.push(new Enemy(x, y, 5, this.currentWave, this.tower.attack_power)); // Boss enemy
                     return;
                 }
                 
@@ -795,11 +831,9 @@
                     powerLevel = largeEnemyLevel;
                 }
                 
-                // Map power level to enemy types 1-5
+                // Map power level to enemy types 1-4 (removed type 5 boss from power level mapping)
                 let enemyType;
-                if (powerLevel >= 100) {
-                    enemyType = 5; // Boss type
-                } else if (powerLevel >= 25) {
+                if (powerLevel >= 25) {
                     enemyType = 4;
                 } else if (powerLevel >= 12) {
                     enemyType = 3;
@@ -881,7 +915,9 @@
                             // Boss can only attack once per second
                             const currentTime = Date.now();
                             if (currentTime - enemy.lastAttackTime >= 1000) { // 1000ms = 1 second
-                                this.tower.takeDamage(enemy.damage);
+                                // Deal 1/4 of current tower health as damage
+                                const damage = this.tower.health * 0.25;
+                                this.tower.takeDamage(damage);
                                 enemy.lastAttackTime = currentTime;
                                 // Don't remove the boss - let it continue attacking
                                 if (this.tower.health <= 0) {
@@ -927,8 +963,8 @@
                         const enemy = this.enemies[j];
                         if (bullet.collidesWith(enemy)) {
                             if (enemy.takeDamage(bullet.damage)) {
-                                // Large explosion for bosses
-                                if (enemy.type === 5 || enemy.type === 6) {
+                                // Large explosion for super bosses only
+                                if (enemy.type === 6) {
                                     this.createExplosion(enemy.x, enemy.y, 50, true); // Boss explosion
                                 }
                                 
@@ -1014,6 +1050,7 @@
                     // Tower stats
                     let statsLine1 = `Power: ${this.tower.attack_power}  Speed: ${this.tower.attack_speed.toFixed(1)}  Range: ${this.tower.attack_range}`;
                     let statsLine2 = `Health: ${this.tower.health.toFixed(1)}/${this.tower.max_health}  Regen: ${this.tower.health_regen.toFixed(1)}/s`;
+                    let statsLine3 = `Enemy Speed: ${(this.speedMultiplier * this.tower.speedBoostMultiplier).toFixed(1)}x`;
                     
                     // Add ring stats when speed is maxed
                     if (this.tower.attack_speed >= 200) {
@@ -1022,6 +1059,7 @@
                     
                     ctx.fillText(statsLine1, 10, 30);
                     ctx.fillText(statsLine2, 10, 60);
+                    ctx.fillText(statsLine3, 10, 90);
                     
                     // Ring timer (top right, only when rings are enabled)
                     if (this.tower.attack_speed >= 200) {
@@ -1037,7 +1075,7 @@
                     
                     // Wave info
                     const enemiesRemaining = this.enemiesInWave - this.enemiesKilledThisWave;
-                    ctx.fillText(`Wave: ${this.currentWave}  Enemies Left: ${enemiesRemaining}`, 10, 90);
+                    ctx.fillText(`Wave: ${this.currentWave}  Enemies Left: ${enemiesRemaining}`, 10, 120);
                     
                     // Wave start text
                     if (this.showWaveText) {
